@@ -34,7 +34,8 @@ def check_password(password, encoded):
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
  id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
- password TEXT NOT NULL, created_at REAL NOT NULL
+ password TEXT NOT NULL, created_at REAL NOT NULL,
+ is_admin INTEGER NOT NULL DEFAULT 0, disabled INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS sessions (
  hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -119,9 +120,18 @@ class Store:
         with closing(sqlite3.connect(self.path)) as con:
             con.execute('PRAGMA journal_mode=WAL')
             con.executescript(SCHEMA)
+            con.execute('BEGIN IMMEDIATE')
+            user_columns = {row[1] for row in con.execute('PRAGMA table_info(users)')}
+            if 'is_admin' not in user_columns:
+                con.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+                # Version 0.1 always created the bootstrap administrator first.
+                con.execute('''UPDATE users SET is_admin=1 WHERE id=(
+                    SELECT id FROM users ORDER BY created_at,id LIMIT 1)''')
+            if 'disabled' not in user_columns:
+                con.execute('ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0')
             if 'connection_id' not in {row[1] for row in con.execute('PRAGMA table_info(repositories)')}:
                 con.execute('ALTER TABLE repositories ADD COLUMN connection_id TEXT REFERENCES connections(id)')
-                con.commit()
+            con.commit()
         os.chmod(self.path, 0o600)
         self.bootstrap()
 
@@ -161,7 +171,7 @@ class Store:
             if con.execute('SELECT 1 FROM users LIMIT 1').fetchone():
                 return
             user_id, password, token = identifier(), secrets.token_urlsafe(20), secrets.token_urlsafe(32)
-            con.execute('INSERT INTO users VALUES (?, ?, ?, ?)',
+            con.execute('INSERT INTO users(id,username,password,created_at,is_admin) VALUES (?, ?, ?, ?, 1)',
                         (user_id, 'admin', password_hash(password), time.time()))
             con.execute('INSERT INTO sessions VALUES (?, ?, ?, ?)',
                         (hashlib.sha256(token.encode()).hexdigest(), user_id, 'api', 0))
@@ -176,16 +186,16 @@ class Store:
             return None
         digest = hashlib.sha256(token.encode()).hexdigest()
         with self.db() as con:
-            row = con.execute('''SELECT u.id, u.username, s.kind FROM sessions s
+            row = con.execute('''SELECT u.id, u.username, u.is_admin, s.kind FROM sessions s
                 JOIN users u ON u.id=s.user_id
-                WHERE s.hash=? AND (s.expires_at=0 OR s.expires_at>?)''',
+                WHERE s.hash=? AND u.disabled=0 AND (s.expires_at=0 OR s.expires_at>?)''',
                               (digest, time.time())).fetchone()
         return dict(row) if row else None
 
     def login(self, username, password):
         with self.db(write=True) as con:
             user = con.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-            if not user or not check_password(password, user['password']):
+            if not user or user['disabled'] or not check_password(password, user['password']):
                 return None
             token = secrets.token_urlsafe(32)
             con.execute('DELETE FROM sessions WHERE expires_at>0 AND expires_at<?', (time.time(),))
@@ -194,9 +204,11 @@ class Store:
         return token
 
     def register(self, username, password):
+        user_id = identifier()
         with self.db(write=True) as con:
-            con.execute('INSERT INTO users VALUES (?, ?, ?, ?)',
-                        (identifier(), username, password_hash(password), time.time()))
+            con.execute('INSERT INTO users(id,username,password,created_at) VALUES (?, ?, ?, ?)',
+                        (user_id, username, password_hash(password), time.time()))
+        return user_id
 
     def connection(self, con, user_id, url, connection_id=''):
         origin = origin_url(url)

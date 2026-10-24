@@ -16,8 +16,8 @@ Findings include a relative path, line and rule name, never the matched secret. 
 Default local output:
 
 ```text
-.data/release/repoknow-0.1.0-source.zip
-.data/release/repoknow-0.1.0-source.zip.sha256
+.data/release/repoknow-0.2.0-source.zip
+.data/release/repoknow-0.2.0-source.zip.sha256
 .data/release/source-release-report.json
 ```
 

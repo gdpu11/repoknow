@@ -11,8 +11,9 @@
 ## Authorized imports
 
 - Use `.venv/bin/python scripts/import_source.py URL --wait` for an explicitly requested repository import.
-- For a GitLab group or subgroup, add `--kind group`. Nested groups cannot be distinguished from repositories by URL shape alone.
+- For a GitHub organization, add `--kind organization` (required for Enterprise). For a GitLab group or subgroup, add `--kind group`. Nested groups cannot be distinguished from repositories by URL shape alone.
 - Reuse credentials configured in the Web UI; never put Tokens in chat, command arguments, Git URLs, or logs.
 - A queued job is not a completed index. Check individual indexing results before reporting success.
-- Group import is a one-time discovery, includes subgroups by default, and skips existing branches. Do not schedule work unless requested.
+- Group/organization import is a one-time discovery and skips existing branches; GitLab groups include subgroups by default. Do not schedule work unless requested.
+- Public registration is closed by default. Test accounts should be created through the administrator API unless explicitly testing registration opt-in.
 - MCP is read-only. Imports and sync use authenticated management APIs.

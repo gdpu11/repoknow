@@ -6,6 +6,7 @@ const state = {
   file: null,
   filter: "all",
   register: false,
+  registrationEnabled: false,
   view: "home",
   routeId: 0,
   fileFilter: "",
@@ -114,7 +115,7 @@ async function api(path, body, method) {
   return result;
 }
 function sidebar() {
-  return `<aside class="sidebar" id="sidebar"><a href="#/" class="brand"><span class="brand-mark">R</span>RepoKnow<small>LOCAL</small></a><a class="nav-link ${state.view === "home" ? "active" : ""}" href="#/">${icon("grid")}知识空间</a><a class="nav-link ${state.view === "search" ? "active" : ""}" href="#/search">${icon("search")}全局检索</a><div class="nav-label">REPOSITORIES · 仓库</div><button class="nav-add" data-action="import">${icon("plus")}导入仓库 / 组</button><button class="nav-add" data-action="connections">${icon("lock")}平台凭证</button><nav class="repo-nav">${state.repos.map((r) => `<a href="${link(r.id)}" class="${state.repo?.id === r.id ? "active" : ""}">${icon(r.platform === "github" ? "git" : "branch")}<span>${esc(r.name)}</span><i class="status-dot ${esc(r.sync_state)}"></i></a>`).join("") || '<p class="small-note">导入一个仓库，开始积累知识。</p>'}</nav><div class="sidebar-footer"><span class="avatar">${esc(state.user?.username?.slice(0, 1).toUpperCase())}</span><span>${esc(state.user?.username)}</span><button data-action="logout" aria-label="退出登录" title="退出登录">${icon("logout")}</button></div></aside>`;
+  return `<aside class="sidebar" id="sidebar"><a href="#/" class="brand"><span class="brand-mark">R</span>RepoKnow<small>LOCAL</small></a><a class="nav-link ${state.view === "home" ? "active" : ""}" href="#/">${icon("grid")}知识空间</a><a class="nav-link ${state.view === "search" ? "active" : ""}" href="#/search">${icon("search")}全局检索</a><div class="nav-label">REPOSITORIES · 仓库</div><button class="nav-add" data-action="import">${icon("plus")}导入仓库 / 组 / 组织</button><button class="nav-add" data-action="connections">${icon("lock")}平台凭证</button>${state.user?.is_admin ? `<button class="nav-add" data-action="accounts">${icon("shield")}团队成员</button>` : ""}<nav class="repo-nav">${state.repos.map((r) => `<a href="${link(r.id)}" class="${state.repo?.id === r.id ? "active" : ""}">${icon(r.platform === "github" ? "git" : "branch")}<span>${esc(r.name)}</span><i class="status-dot ${esc(r.sync_state)}"></i></a>`).join("") || '<p class="small-note">导入一个仓库，开始积累知识。</p>'}</nav><div class="sidebar-footer"><span class="avatar">${esc(state.user?.username?.slice(0, 1).toUpperCase())}</span><span>${esc(state.user?.username)}</span><button data-action="logout" aria-label="退出登录" title="退出登录">${icon("logout")}</button></div></aside>`;
 }
 function shell(content, breadcrumb = "知识空间") {
   app.innerHTML = `<div class="shell">${sidebar()}<main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="展开菜单">${icon("menu")}</button><a href="#/">工作台</a><span>/</span><strong>${esc(breadcrumb)}</strong></div><button class="top-search" data-action="focus-search">${icon("search")}搜索代码、文档、符号<kbd>⌘ K</kbd></button></header><div class="workspace" id="content">${content}</div></main></div>`;
@@ -509,27 +510,37 @@ async function importDialog(credentialsOnly = false) {
     return;
   }
   state.connections = await api("/api/connections");
-  dialogFrame("导入仓库或 GitLab 组", "单仓库直接建立索引；组会发现全部可见仓库，再批量建立知识库。", `<form id="import-form" class="dialog-body">
-    <div class="field-row"><div class="field"><label for="source-kind">导入类型</label><select class="input" id="source-kind" name="kind"><option value="repository">单个 GitHub / GitLab 仓库</option><option value="group">GitLab 组 / 子组</option></select></div><div class="field"><label for="repo-visibility">知识库可见性</label><select id="repo-visibility" class="input" name="visibility"><option value="private">仅自己可见</option><option value="shared">与所有登录用户共享</option></select></div></div>
-    <div class="field"><label for="repo-url">仓库或组地址</label><input class="input" id="repo-url" name="url" type="url" required placeholder="https://gitlab.example.com/engineering/project.git"><small>组示例：https://gitlab.example.com/engineering 或 https://gitlab.example.com/engineering/backend。</small></div>
-    <div class="field"><label for="connection-id">平台凭证</label><select class="input" id="connection-id" name="connection_id"><option value="">自动使用同域名凭证；无配置时匿名访问</option>${state.connections.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${esc(c.base_url)}</option>`).join("")}</select><small>在侧栏“平台凭证”中配置一次，后续仓库和组导入会自动复用。</small></div>
+  dialogFrame("导入仓库、组或组织", "单仓库直接建立索引；GitLab 组和 GitHub 组织可批量发现并导入。", `<form id="import-form" class="dialog-body">
+    <div class="field-row"><div class="field"><label for="source-kind">导入类型</label><select class="input" id="source-kind" name="kind"><option value="repository">单个 GitHub / GitLab 仓库</option><option value="group">GitLab 组 / 子组</option><option value="organization">GitHub 组织 / Enterprise</option></select></div><div class="field"><label for="repo-visibility">知识库可见性</label><select id="repo-visibility" class="input" name="visibility"><option value="private">仅自己可见</option><option value="shared">与所有登录用户共享</option></select></div></div>
+    <div class="field"><label for="repo-url">仓库、组或组织地址</label><input class="input" id="repo-url" name="url" type="url" required placeholder="https://gitlab.example.com/engineering/project.git"><small>组：https://gitlab.example.com/engineering；组织：https://github.com/example-org。</small></div>
+    <div class="field"><label for="connection-id">平台凭证</label><select class="input" id="connection-id" name="connection_id"><option value="">自动使用同域名凭证；无配置时匿名访问</option>${state.connections.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${esc(c.base_url)}</option>`).join("")}</select><small>在侧栏“平台凭证”中配置一次，后续同域名导入会自动复用。</small></div>
     <div id="repository-options"><div class="field-row"><div class="field"><label for="repo-name">知识库名称</label><input class="input" id="repo-name" name="name" placeholder="留空使用仓库名称"></div><div class="field"><label for="repo-branch">分支</label><input class="input" id="repo-branch" name="branch" placeholder="留空检测默认分支"></div></div><div class="field"><label for="repo-platform">仓库平台</label><select class="input" id="repo-platform" name="platform"><option value="auto">自动识别 / 使用平台配置</option><option value="github">GitHub / GitHub Enterprise</option><option value="gitlab">GitLab / 自建 GitLab</option></select></div><details><summary>仅为此仓库填写凭证</summary><p class="small-note">填写后覆盖自动选择的平台凭证；不要同时手选平台凭证。</p>${gitCredentialFields()}</details></div>
-    <div id="group-options" hidden><label><input type="checkbox" name="include_subgroups" checked> 包含全部子组</label><p class="small-note">GitLab Token 需要 read_api + read_repository。已有仓库会跳过，空仓库会说明原因；只发现当前 Token 可访问的仓库。不会定时扫描新增仓库。</p><button class="btn small" type="button" data-action="preview-group">仅查看发现结果</button><p class="small-note" id="group-preview" role="status"></p></div>
+    <div id="namespace-options" hidden><label id="subgroup-option"><input type="checkbox" name="include_subgroups" checked> 包含全部子组</label><p class="small-note" id="namespace-help"></p><p class="small-note">仅发现当前凭证可访问的仓库；已有分支跳过，无默认分支等情况会说明原因。再次导入可补充新仓库，不会定时扫描。</p><button class="btn small" type="button" data-action="preview-namespace">仅查看发现结果</button><p class="small-note" id="namespace-preview" role="status"></p></div>
     <div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="close-dialog">取消</button><button class="btn primary" type="submit">导入并建立索引</button></div></form>`);
+}
+function namespaceFields(fields) {
+  const data = {url: fields.url, connection_id: fields.connection_id};
+  if (fields.kind === "group") data.include_subgroups = fields.include_subgroups === "on";
+  return data;
+}
+async function accountsDialog() {
+  const accounts = await api("/api/admin/users");
+  dialogFrame("团队成员", "由管理员开通账户。停用成员会撤销其登录会话和只读 Key，保留已有知识库与凭证。", `<div class="dialog-body"><div class="link-list">${accounts.map(a => `<div class="meta-row"><span><strong>${esc(a.username)}</strong><br>${a.is_admin ? "管理员" : a.disabled ? "已停用" : "正常"}</span>${a.is_admin ? '<span class="pill">管理员</span>' : `<button class="btn small" data-action="account-access" data-id="${esc(a.id)}" data-disabled="${!a.disabled}">${a.disabled ? "启用" : "停用"}</button>`}</div>`).join("")}</div><hr class="divider"><form id="member-form"><h3>新增普通成员</h3><div class="field-row"><div class="field"><label for="member-name">账号</label><input class="input" id="member-name" name="username" required minlength="2" maxlength="64" autocomplete="off"></div><div class="field"><label for="member-password">初始密码</label><input class="input" id="member-password" name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="至少 10 个字符"></div></div><p class="small-note">私有知识库仍仅所有者可读；共享知识库对所有启用的登录成员可读。</p><div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="close-dialog">关闭</button><button class="btn primary" type="submit">创建成员</button></div></form></div>`);
 }
 async function connectionsDialog(editId = "") {
   state.connections = await api("/api/connections");
   const current = state.connections.find(c=>c.id===editId);
   dialogFrame("平台凭证", "Token 按账号和平台域名隔离，加密保存在本机。同域名仓库可自动复用。", `<div class="dialog-body">
     ${!current ? `<div class="link-list">${state.connections.map(c=>`<div class="meta-row"><span><strong>${esc(c.name)}</strong><br>${esc(c.base_url)} · ${c.has_credentials ? "已加密保存" : "匿名访问"}</span><button class="btn small" data-action="edit-connection" data-id="${esc(c.id)}">更新</button></div>`).join("") || '<p class="small-note">尚未配置平台凭证。</p>'}</div><hr class="divider">` : ""}
-    <form id="connection-form"><h3>${current ? "更新 " + esc(current.name) : "新增平台"}</h3><input type="hidden" name="id" value="${esc(current?.id || "")}"><div class="field-row"><div class="field"><label for="connection-name">名称</label><input class="input" id="connection-name" name="name" value="${esc(current?.name || "")}" placeholder="例如：工作 GitLab"></div><div class="field"><label for="connection-platform">平台</label><select class="input" id="connection-platform" name="platform" ${current ? "disabled" : ""}><option value="gitlab" ${current?.platform !== "github" ? "selected" : ""}>GitLab</option><option value="github" ${current?.platform === "github" ? "selected" : ""}>GitHub</option></select></div></div><div class="field"><label for="connection-url">平台地址（只填域名）</label><input class="input" type="url" id="connection-url" name="base_url" required value="${esc(current?.base_url || "")}" placeholder="https://gitlab.com 或自建 GitLab 地址" ${current ? "disabled" : ""}></div>${gitCredentialFields()}<p class="small-note">GitLab 组发现：read_api + read_repository；仅导入单仓库：read_repository。${current ? "Token 留空保留原值；更新后，引用此凭证的仓库下次同步时使用新 Token。" : "Token 仅在此输入，不用发到聊天中。"}</p><div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="${current ? "connections" : "close-dialog"}">${current ? "返回" : "关闭"}</button><button class="btn primary" type="submit">保存平台凭证</button></div></form></div>`);
+    <form id="connection-form"><h3>${current ? "更新 " + esc(current.name) : "新增平台"}</h3><input type="hidden" name="id" value="${esc(current?.id || "")}"><div class="field-row"><div class="field"><label for="connection-name">名称</label><input class="input" id="connection-name" name="name" value="${esc(current?.name || "")}" placeholder="例如：工作 GitLab"></div><div class="field"><label for="connection-platform">平台</label><select class="input" id="connection-platform" name="platform" ${current ? "disabled" : ""}><option value="gitlab" ${current?.platform !== "github" ? "selected" : ""}>GitLab</option><option value="github" ${current?.platform === "github" ? "selected" : ""}>GitHub</option></select></div></div><div class="field"><label for="connection-url">平台地址（只填域名）</label><input class="input" type="url" id="connection-url" name="base_url" required value="${esc(current?.base_url || "")}" placeholder="https://gitlab.com 或自建 GitLab 地址" ${current ? "disabled" : ""}></div>${gitCredentialFields()}<p class="small-note">GitLab 组发现：read_api + read_repository；仅导入单仓库：read_repository。GitHub 组织使用 Metadata 读取 + 目标仓库 Contents 读取权限。${current ? "Token 留空保留原值；更新后，引用此凭证的仓库下次同步时使用新 Token。" : "Token 仅在此输入，不用发到聊天中。"}</p><div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="${current ? "connections" : "close-dialog"}">${current ? "返回" : "关闭"}</button><button class="btn primary" type="submit">保存平台凭证</button></div></form></div>`);
 }
 function groupResult(result) {
   dialogFrame("批量导入已加入队列", `发现 ${result.discovered} 个仓库，新增 ${result.created} 个，已有 ${result.existing} 个，跳过 ${result.skipped.length} 个。`, `<div class="dialog-body"><p class="small-note">索引在后台逐个建立。已存在的仓库保留当前设置；每个仓库的同步结果可独立查看。</p><div class="link-list">${result.repositories.slice(0,40).map(r=>`<a data-action="close-dialog" href="${link(r.id)}">${esc(r.name)}<small>${r.created ? "等待索引" : "已存在"}</small></a>`).join("")}</div>${result.skipped.slice(0,20).map(r=>`<p class="small-note">${esc(r.name)}：${esc(r.reason)}</p>`).join("")}<div class="dialog-actions"><button class="btn primary" data-action="close-dialog">查看知识空间中的全部仓库</button></div></div>`);
 }
 
 function showLogin() {
-  app.innerHTML = `<div class="login-screen"><section class="login-visual"><div class="brand"><span class="brand-mark">R</span>RepoKnow</div><h1>代码有脉络。<br>知识<span>有出处。</span></h1><p>连接你的 Git 仓库，把散落的代码和文档<br>汇成一处可以探索、检索与核对的知识空间。</p><div class="login-features"><div>${icon("git")}GitHub · GitLab · 自建实例</div><div>${icon("graph")}源码、文档、符号与调用线索</div><div>${icon("shield")}私有仓库与来源版本追溯</div></div></section><section class="login-form-side"><form id="account-form" class="login-box"><div class="eyebrow">WELCOME TO YOUR KNOWLEDGE SPACE</div><h2>${state.register ? "创建你的账户" : "欢迎回来"}</h2><p class="intro">${state.register ? "仓库默认仅自己可见。" : "登录并探索你的仓库知识库。"}</p><div class="field"><label for="username">账号</label><input class="input" id="username" name="username" required minlength="2" maxlength="64" autocomplete="username" placeholder="输入账号"></div><div class="field"><label for="password">密码</label><input class="input" id="password" name="password" type="password" required minlength="10" maxlength="200" autocomplete="${state.register ? "new-password" : "current-password"}" placeholder="至少 10 个字符"></div><div id="login-error" class="field-error" role="alert"></div><button class="btn primary" type="submit">${state.register ? "创建账户" : "登录知识空间"} ${icon("arrow")}</button><p class="login-bottom">${state.register ? "已有账户？" : "还没有账户？"} <button type="button" data-action="register-toggle">${state.register ? "登录" : "创建账户"}</button></p><p class="login-note">本地管理员首次登录信息保存在项目目录的 <code>.data/admin.json</code>。<br>本实例只在本机运行，内容不会自动发布到外网。</p></form></section></div>`;
+  if (!state.registrationEnabled) state.register = false;
+  app.innerHTML = `<div class="login-screen"><section class="login-visual"><div class="brand"><span class="brand-mark">R</span>RepoKnow</div><h1>代码有脉络。<br>知识<span>有出处。</span></h1><p>连接你的 Git 仓库，把散落的代码和文档<br>汇成一处可以探索、检索与核对的知识空间。</p><div class="login-features"><div>${icon("git")}GitHub · GitLab · 自建实例</div><div>${icon("graph")}源码、文档、符号与调用线索</div><div>${icon("shield")}私有仓库与来源版本追溯</div></div></section><section class="login-form-side"><form id="account-form" class="login-box"><div class="eyebrow">WELCOME TO YOUR KNOWLEDGE SPACE</div><h2>${state.register ? "创建你的账户" : "欢迎回来"}</h2><p class="intro">${state.register ? "仓库默认仅自己可见。" : "登录并探索你的仓库知识库。"}</p><div class="field"><label for="username">账号</label><input class="input" id="username" name="username" required minlength="2" maxlength="64" autocomplete="username" placeholder="输入账号"></div><div class="field"><label for="password">密码</label><input class="input" id="password" name="password" type="password" required minlength="10" maxlength="200" autocomplete="${state.register ? "new-password" : "current-password"}" placeholder="至少 10 个字符"></div><div id="login-error" class="field-error" role="alert"></div><button class="btn primary" type="submit">${state.register ? "创建账户" : "登录知识空间"} ${icon("arrow")}</button><p class="login-bottom">${state.registrationEnabled ? `${state.register ? "已有账户？" : "还没有账户？"} <button type="button" data-action="register-toggle">${state.register ? "登录" : "创建账户"}</button>` : "本实例由管理员开通账户，请联系管理员。"}</p><p class="login-note">本地管理员首次登录信息保存在项目目录的 <code>.data/admin.json</code>。<br>默认在本机运行，内容不会自动发布到外网。</p></form></section></div>`;
 }
 document.addEventListener("click", async (event) => {
   const anchor = event.target.closest('.markdown a[data-document-anchor]');
@@ -544,13 +555,21 @@ document.addEventListener("click", async (event) => {
   try {
     if (action === "import") await importDialog();
     else if (action === "connections") await connectionsDialog();
+    else if (action === "accounts") await accountsDialog();
+    else if (action === "account-access") {
+      button.disabled = true;
+      const disabled = button.dataset.disabled === "true";
+      await api(`/api/admin/users/${encodeURIComponent(button.dataset.id)}`, {disabled}, "PUT");
+      await accountsDialog();
+      toast(disabled ? "成员已停用，登录会话和只读 Key 已撤销" : "成员已启用，需要重新登录");
+    }
     else if (action === "edit-connection") await connectionsDialog(button.dataset.id);
-    else if (action === "preview-group") {
+    else if (action === "preview-namespace") {
       const fields = Object.fromEntries(new FormData(document.querySelector("#import-form")));
       button.disabled = true;
       try {
-        const result = await api("/api/groups/discover", {url:fields.url, connection_id:fields.connection_id, include_subgroups:fields.include_subgroups === "on"});
-        document.querySelector("#group-preview").textContent = `发现 ${result.projects.length} 个可导入仓库，跳过 ${result.skipped.length} 个空仓库；尚未创建知识库。`;
+        const result = await api(`/api/${fields.kind === "organization" ? "organizations" : "groups"}/discover`, namespaceFields(fields));
+        document.querySelector("#namespace-preview").textContent = `发现 ${result.projects.length} 个可导入仓库，跳过 ${result.skipped.length} 个；尚未创建知识库。`;
       } finally { button.disabled = false; }
     }
     else if (action === "close-dialog") dialog.close();
@@ -563,6 +582,7 @@ document.addEventListener("click", async (event) => {
       go("#/search");
       setTimeout(() => document.querySelector("#search-input")?.focus(), 100);
     } else if (action === "register-toggle") {
+      if (!state.registrationEnabled) return;
       state.register = !state.register;
       showLogin();
     } else if (action === "logout") {
@@ -597,6 +617,7 @@ document.addEventListener("submit", async (event) => {
       "import-form",
       "credential-form",
       "connection-form",
+      "member-form",
       "knowledge-search",
       "symbol-search",
     ].includes(form.id)
@@ -614,8 +635,8 @@ document.addEventListener("submit", async (event) => {
       await refreshRepos();
       await route();
     } else if (form.id === "import-form") {
-      if (fields.kind === "group") {
-        const result = await api("/api/groups/import", {url:fields.url, connection_id:fields.connection_id, visibility:fields.visibility, include_subgroups:fields.include_subgroups === "on"});
+      if (["group", "organization"].includes(fields.kind)) {
+        const result = await api(`/api/${fields.kind === "organization" ? "organizations" : "groups"}/import`, {...namespaceFields(fields), visibility:fields.visibility});
         await refreshRepos();
         go("#/");
         groupResult(result);
@@ -626,12 +647,16 @@ document.addEventListener("submit", async (event) => {
         go(link(result.id));
         toast("仓库已添加，开始同步和建立索引");
       }
+    } else if (form.id === "member-form") {
+      await api("/api/admin/users", fields);
+      await accountsDialog();
+      toast("成员账户已创建");
     } else if (form.id === "connection-form") {
       const id = fields.id;
       delete fields.id;
       await api(id ? `/api/connections/${encodeURIComponent(id)}` : "/api/connections", fields, id ? "PUT" : "POST");
       await connectionsDialog();
-      toast("平台凭证已保存；导入同域名仓库或组时会自动复用");
+      toast("平台凭证已保存；同域名导入会自动复用");
     } else if (form.id === "credential-form") {
       await api(
         `/api/repositories/${state.repo.id}/credentials`,
@@ -655,10 +680,13 @@ document.addEventListener("submit", async (event) => {
 });
 document.addEventListener("change", (event) => {
   if (event.target.id === "source-kind") {
-    const group = event.target.value === "group";
-    document.querySelector("#repository-options").hidden = group;
-    document.querySelector("#group-options").hidden = !group;
-    document.querySelector("#repo-url").placeholder = group ? "https://gitlab.example.com/engineering" : "https://gitlab.example.com/engineering/project.git";
+    const kind = event.target.value;
+    document.querySelector("#repository-options").hidden = kind !== "repository";
+    document.querySelector("#namespace-options").hidden = kind === "repository";
+    document.querySelector("#subgroup-option").hidden = kind !== "group";
+    document.querySelector("#namespace-preview").textContent = "";
+    document.querySelector("#namespace-help").textContent = kind === "organization" ? "GitHub Token：Metadata 读取 + 目标仓库 Contents 读取。Enterprise 使用已配置的 GitHub 平台凭证。" : "GitLab Token：read_api + read_repository。";
+    document.querySelector("#repo-url").placeholder = kind === "organization" ? "https://github.com/example-org" : kind === "group" ? "https://gitlab.example.com/engineering" : "https://gitlab.example.com/engineering/project.git";
   }
 });
 document.addEventListener("input", (event) => {
@@ -712,6 +740,8 @@ setInterval(async () => {
 }, 2500);
 (async () => {
   try {
+    const config = await api("/api/auth/config");
+    state.registrationEnabled = config.registration_enabled === true;
     state.user = await api("/api/auth/me");
     await refreshRepos();
     await route();

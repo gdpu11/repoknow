@@ -73,7 +73,7 @@ class GroupImportTests(unittest.TestCase):
         self.assertEqual(rejected.status_code, 422)
         with TestClient(self.app) as other:
             other.headers['X-Requested-With'] = 'RepoKnow'
-            other.post('/api/auth/register', json={'username': 'outsider', 'password': 'Outsider-password-123'})
+            self.client.post('/api/admin/users', json={'username': 'outsider', 'password': 'Outsider-password-123'})
             other.post('/api/auth/login', json={'username': 'outsider', 'password': 'Outsider-password-123'})
             self.assertEqual(other.get('/api/connections').json(), [])
             self.assertEqual(other.put('/api/connections/' + connection_id, json={'token': 'stolen'}).status_code, 404)

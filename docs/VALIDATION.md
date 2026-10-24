@@ -9,7 +9,7 @@ node --check app/static/app.js
 python3 scripts/prepare_release.py --check
 ```
 
-Automated coverage includes authentication, user isolation, shared read-only repositories, CSRF checks, read-only API Keys, encrypted credentials, Token rotation, origin matching, GitLab pagination/subgroups, idempotent imports, failed discovery rollback, snapshot publication consistency, interrupted workers, schema upgrades, source provenance, malformed MCP arguments, and Markdown restrictions.
+Automated coverage includes authentication, closed-by-default registration, administrator-only member management, disabled-account session/Key revocation, legacy administrator migration, user isolation, shared read-only repositories, CSRF checks, read-only API Keys, encrypted credentials, Token rotation, origin matching, GitLab pagination/subgroups, GitHub organization/Enterprise API discovery, owner/clone-path validation, pagination budgets, idempotent imports, failed discovery rollback, snapshot publication consistency, interrupted workers, schema upgrades, source provenance, malformed MCP arguments, and Markdown restrictions.
 
 The private integration test creates a disposable Git HTTP server: group API calls require a fixture Token, Git fetch requires Basic authentication, and the final index is queried for known source evidence. It neither needs nor uses a real private repository. The fixture creates commit objects in a temporary bare repository; it does not commit the product checkout.
 

@@ -1,6 +1,6 @@
 [project]
 name = "repoknow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Self-hosted, model-free knowledge base for GitHub and GitLab repositories"
 readme = "README.md"
 requires-python = ">=3.10"

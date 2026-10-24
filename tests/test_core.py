@@ -106,7 +106,7 @@ class ApplicationTests(unittest.TestCase):
         repo_id = self.indexed()
         other = TestClient(self.app)
         other.headers['X-Requested-With'] = 'RepoKnow'
-        self.assertEqual(other.post('/api/auth/register', json={'username': 'other-user', 'password': 'Other-pass-12345'}).status_code, 201)
+        self.assertEqual(self.client.post('/api/admin/users', json={'username': 'other-user', 'password': 'Other-pass-12345'}).status_code, 201)
         other.post('/api/auth/login', json={'username': 'other-user', 'password': 'Other-pass-12345'})
         self.assertEqual(other.get('/api/repositories').json(), [])
         self.assertEqual(other.get(f'/api/repositories/{repo_id}').status_code, 404)
@@ -120,7 +120,7 @@ class ApplicationTests(unittest.TestCase):
         self.engine.tick()
         other = TestClient(self.app)
         other.headers['X-Requested-With'] = 'RepoKnow'
-        other.post('/api/auth/register', json={'username': 'reader', 'password': 'Reader-pass-12345'})
+        self.client.post('/api/admin/users', json={'username': 'reader', 'password': 'Reader-pass-12345'})
         other.post('/api/auth/login', json={'username': 'reader', 'password': 'Reader-pass-12345'})
         self.assertEqual(other.get(f'/api/repositories/{repo_id}').status_code, 200)
         self.assertTrue(other.get('/api/search', params={'q': 'helper'}).json()['results'])

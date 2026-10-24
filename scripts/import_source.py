@@ -1,4 +1,4 @@
-"""Import an authorized repository or GitLab group through the running local API."""
+"""Import an authorized repository, GitLab group or GitHub organization through the local API."""
 import argparse
 import http.cookiejar
 import json
@@ -19,8 +19,8 @@ class NoRedirect(HTTPRedirectHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('url', help='GitHub/GitLab 仓库或 GitLab 组地址')
-    parser.add_argument('--kind', choices=['auto', 'repository', 'group'], default='auto')
+    parser.add_argument('url', help='GitHub/GitLab 仓库、GitLab 组或 GitHub 组织地址')
+    parser.add_argument('--kind', choices=['auto', 'repository', 'group', 'organization'], default='auto')
     parser.add_argument('--connection', default='', help='已在界面配置的平台凭证名称或 ID；默认按域名复用')
     parser.add_argument('--branch', default='', help='单仓库分支，留空检测默认分支')
     parser.add_argument('--no-subgroups', action='store_true', help='组导入不包含子组')
@@ -58,11 +58,18 @@ def main():
         url = args.url if '://' in args.url else 'https://' + args.url
         kind = args.kind
         if kind == 'auto':
-            path = urlsplit(url).path.strip('/')
-            kind = 'group' if path and '/' not in path and not path.endswith('.git') else 'repository'
-        if kind == 'group':
-            result = request('/api/groups/import', {'url': url, 'connection_id': connection_id,
-                             'include_subgroups': not args.no_subgroups})
+            parsed = urlsplit(url)
+            path = parsed.path.strip('/')
+            if path and '/' not in path and not path.endswith('.git'):
+                kind = 'organization' if parsed.hostname == 'github.com' else 'group'
+            else:
+                kind = 'repository'
+        if kind in ('group', 'organization'):
+            body = {'url': url, 'connection_id': connection_id}
+            if kind == 'group':
+                body['include_subgroups'] = not args.no_subgroups
+            endpoint = 'organizations' if kind == 'organization' else 'groups'
+            result = request(f'/api/{endpoint}/import', body)
             ids = {row['id'] for row in result['repositories']}
         else:
             normalized = url.rstrip('/').removesuffix('.git') + '.git'

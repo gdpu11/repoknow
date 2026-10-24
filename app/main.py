@@ -15,10 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .engine import Engine, overview
 from .git_source import normalize_url, origin_url, source_url
 from .middleware import RequestSizeLimit
-from .providers import discover_group, normalize_group
+from .providers import discover_group, normalize_group, discover_organization, normalize_organization
 from .scanner import query_terms
 from .store import Store, identifier
 
@@ -28,9 +29,13 @@ class AccountInput(BaseModel):
     password: str = Field(min_length=10, max_length=200)
 
 
+class AccountAccessInput(BaseModel):
+    disabled: bool
+
+
 class RepositoryInput(BaseModel):
     url: str = Field(min_length=5, max_length=1000)
-    name: str = Field(default='', max_length=100)
+    name: str = Field(default='', max_length=1000)
     branch: str = Field(default='', max_length=200)
     platform: str = Field(default='auto', pattern='^(auto|github|gitlab)$')
     username: str = Field(default='', max_length=200)
@@ -54,11 +59,14 @@ class ConnectionUpdate(CredentialInput):
     name: str = Field(default='', max_length=100)
 
 
-class GroupInput(BaseModel):
+class NamespaceInput(BaseModel):
     url: str = Field(min_length=5, max_length=1000)
     connection_id: str = Field(default='', max_length=64)
-    include_subgroups: bool = True
     visibility: str = Field(default='private', pattern='^(private|shared)$')
+
+
+class GroupInput(NamespaceInput):
+    include_subgroups: bool = True
 
 
 class SourceInput(BaseModel):
@@ -88,6 +96,7 @@ class SearchInput(BaseModel):
 
 def create_app(data_dir=None, start_worker=True):
     store = Store(data_dir or os.environ.get('REPOKNOW_DATA_DIR', '.data'))
+    registration_enabled = os.environ.get('REPOKNOW_ALLOW_REGISTRATION', '0') == '1'
     engine = Engine(store)
     markdown = MarkdownIt('commonmark', {'html': False})
     markdown.enable(['table', 'strikethrough'])
@@ -101,7 +110,7 @@ def create_app(data_dir=None, start_worker=True):
         if start_worker:
             engine.stop()
 
-    app = FastAPI(title='RepoKnow', version='0.1.0', lifespan=lifespan,
+    app = FastAPI(title='RepoKnow', version=__version__, lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store, app.state.engine = store, engine
     app.add_middleware(RequestSizeLimit)
@@ -136,6 +145,11 @@ def create_app(data_dir=None, start_worker=True):
             raise HTTPException(403, '此 API Key 仅允许只读查询')
         return user
 
+    def administrator(user=Depends(principal)):
+        if not user['is_admin'] or user['kind'] != 'web':
+            raise HTTPException(403, '此操作需要管理员登录；只读 API Key 不能管理成员')
+        return user
+
     def repository(con, repo_id, user, owner=False):
         result = store.repository(repo_id, user['id'], owner, connection=con)
         if not result:
@@ -144,7 +158,11 @@ def create_app(data_dir=None, start_worker=True):
 
     @app.get('/health')
     def health():
-        return {'status': 'ok', 'version': '0.1.0'}
+        return {'status': 'ok', 'version': __version__}
+
+    @app.get('/api/auth/config')
+    def authentication_config():
+        return {'registration_enabled': registration_enabled}
 
     @app.post('/api/auth/login')
     def login(body: AccountInput, request: Request, response: Response):
@@ -164,6 +182,8 @@ def create_app(data_dir=None, start_worker=True):
 
     @app.post('/api/auth/register', status_code=201)
     def register(body: AccountInput):
+        if not registration_enabled:
+            raise HTTPException(403, '当前实例已关闭公开注册，请联系管理员创建账户')
         try:
             store.register(body.username, body.password)
         except sqlite3.IntegrityError:
@@ -172,7 +192,39 @@ def create_app(data_dir=None, start_worker=True):
 
     @app.get('/api/auth/me')
     def me(user=Depends(principal)):
-        return {'id': user['id'], 'username': user['username']}
+        return {'id': user['id'], 'username': user['username'], 'is_admin': bool(user['is_admin'])}
+
+    def public_account(row):
+        return {'id': row['id'], 'username': row['username'], 'created_at': row['created_at'],
+                'is_admin': bool(row['is_admin']), 'disabled': bool(row['disabled'])}
+
+    @app.get('/api/admin/users')
+    def list_accounts(user=Depends(administrator)):
+        with store.db() as con:
+            return [public_account(row) for row in con.execute(
+                'SELECT id,username,created_at,is_admin,disabled FROM users ORDER BY created_at,id')]
+
+    @app.post('/api/admin/users', status_code=201)
+    def add_account(body: AccountInput, user=Depends(administrator)):
+        try:
+            user_id = store.register(body.username, body.password)
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, '账号已存在')
+        with store.db() as con:
+            return public_account(con.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone())
+
+    @app.put('/api/admin/users/{user_id}')
+    def update_account_access(user_id: str, body: AccountAccessInput, user=Depends(administrator)):
+        with store.db(write=True) as con:
+            row = con.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone()
+            if not row:
+                raise HTTPException(404, '账号不存在')
+            if body.disabled and row['is_admin']:
+                raise HTTPException(422, '管理员账号不能停用')
+            con.execute('UPDATE users SET disabled=? WHERE id=?', (int(body.disabled), user_id))
+            if body.disabled:
+                con.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
+        return {'ok': True}
 
     @app.post('/api/auth/logout')
     def logout(request: Request, response: Response, user=Depends(principal)):
@@ -305,17 +357,43 @@ def create_app(data_dir=None, start_worker=True):
     @app.post('/api/groups/import')
     def import_group(body: GroupInput, user=Depends(principal)):
         data, connection = group_projects(body, user)
+        return import_discovered(data, connection, body, user, 'gitlab')
+
+    def import_discovered(data, connection, body, user, platform):
         results = []
         with store.db(write=True) as con:
             for project in data['projects']:
-                entry = RepositoryInput(**project, platform='gitlab', visibility=body.visibility,
+                entry = RepositoryInput(**project, platform=platform, visibility=body.visibility,
                                         connection_id=connection['id'] if connection else '')
                 results.append(enqueue_repository(con, entry, user, skip_existing=True))
         engine.wake.set()
-        return {'group': data['url'], 'discovered': len(data['projects']) + len(data['skipped']),
+        return {('group' if platform == 'gitlab' else 'organization'): data['url'],
+                'discovered': len(data['projects']) + len(data['skipped']),
                 'created': sum(item['created'] for item in results),
                 'existing': sum(not item['created'] for item in results),
                 'skipped': data['skipped'], 'repositories': results}
+
+    def organization_projects(body, user):
+        try:
+            base, _ = normalize_organization(body.url)
+            with store.db() as con:
+                connection = store.connection(con, user['id'], base, body.connection_id)
+            if connection and connection['platform'] != 'github':
+                raise ValueError('组织发现需要 GitHub 平台凭证；GitLab 请使用组导入')
+            credentials = store.decrypt(connection['id'], connection['credential']) if connection else {}
+            return discover_organization(body.url, credentials), connection
+        except ValueError as error:
+            raise HTTPException(422, str(error))
+
+    @app.post('/api/organizations/discover')
+    def preview_organization(body: NamespaceInput, user=Depends(principal)):
+        data, _ = organization_projects(body, user)
+        return data
+
+    @app.post('/api/organizations/import')
+    def import_organization(body: NamespaceInput, user=Depends(principal)):
+        data, connection = organization_projects(body, user)
+        return import_discovered(data, connection, body, user, 'github')
 
     @app.get('/api/repositories/{repo_id}')
     def repository_detail(repo_id: str, user=Depends(principal)):
@@ -511,7 +589,7 @@ def create_app(data_dir=None, start_worker=True):
             return {'jsonrpc': '2.0', 'id': body['id'], 'error': {'code': -32602, 'message': 'Invalid params'}}
         if method == 'initialize':
             result = {'protocolVersion': params.get('protocolVersion', '2025-03-26'),
-                      'capabilities': {'tools': {}}, 'serverInfo': {'name': 'repoknow', 'version': '0.1.0'}}
+                      'capabilities': {'tools': {}}, 'serverInfo': {'name': 'repoknow', 'version': __version__}}
         elif method == 'ping':
             result = {}
         elif method == 'tools/list':
