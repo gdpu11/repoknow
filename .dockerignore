@@ -1,0 +1,19 @@
+# Only application source and locked runtime requirements enter the image.
+**
+!Dockerfile
+!requirements.txt
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!app/
+!app/**
+app/**/__pycache__/
+app/**/*.pyc
+**/.env*
+**/*.key
+**/*.pem
+**/*.sqlite*
+**/*.db
+**/*.log
+**/*.bak
+**/credentials.json
+**/admin.json

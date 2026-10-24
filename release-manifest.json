@@ -1,0 +1,10 @@
+{
+  "name": "repoknow",
+  "files": [
+    ".gitignore", ".dockerignore", "AGENTS.md", "README.md", "LICENSE",
+    "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+    "Dockerfile", "compose.yaml", "pyproject.toml", "uv.lock", "requirements.txt",
+    "release-manifest.json"
+  ],
+  "directories": ["app", "scripts", "tests", "docs", ".github"]
+}
