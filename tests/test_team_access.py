@@ -202,6 +202,8 @@ class TeamAccessTests(unittest.TestCase):
         self.assertTrue(self.member.get('/api/search', params={'q': 'helper'}).json()['results'])
         symbols = self.data(key, 'knowledge_get_symbols', {'repository_id': repo['id']})['symbols']
         args = {
+            'knowledge_get_overview': {'repository_id': repo['id']},
+            'knowledge_list_files': {'repository_id': repo['id']},
             'knowledge_get_symbols': {'repository_id': repo['id']},
             'knowledge_get_source': {'repository_id': repo['id'], 'commit': repo['commit_id'], 'path': 'main.py'},
             'knowledge_trace_dependency': {'repository_id': repo['id'], 'symbol_id': symbols[0]['id']},

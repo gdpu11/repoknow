@@ -223,7 +223,7 @@ function overviewPage() {
                       `<tr><td><a href="${link(r.id, "code", d.path)}">${esc(d.name)}</a></td><td>${esc(d.version)}</td></tr>`,
                   )
                   .join("")}</table>`
-              : '<p class="small-note">当前未提取到 package.json、requirements.txt 或 go.mod 依赖。</p>'
+              : '<p class="small-note">当前未提取到 package.json、requirements.txt、go.mod、pyproject.toml 或 Cargo.toml 依赖。</p>'
           }</div></section></div><div><section class="panel overview-section"><div class="panel-head">文件语言<small>${Object.keys(s.languages || {}).length} 种</small></div><div class="panel-body">${Object.entries(
             s.languages || {},
           )
@@ -406,10 +406,13 @@ async function searchPage(params, routeId) {
   state.file = null;
   const q = params.get("q") || "",
     repoId = params.get("repo") || "",
-    kind = params.get("kind") || "";
+    kind = params.get("kind") || "",
+    pathPrefix = params.get("path_prefix") || "",
+    language = params.get("language") || "";
+  const languages = [...new Set(state.repos.flatMap(r => Object.keys(r.statistics.languages || {})).concat(language ? [language] : []))].sort();
   state.repo = repoId ? state.repos.find((r) => r.id === repoId) || null : null;
   shell(
-    `<div class="page-head"><div><div class="eyebrow">SEARCH WITH EVIDENCE</div><h1 class="page-title">找到答案的出处。</h1><p class="intro">检索文档、源码和代码符号。每条结果都保留版本和来源。</p></div></div><form id="knowledge-search" class="search-box"><input class="input" id="search-input" name="q" value="${esc(q)}" placeholder="函数名、业务关键词，或一个问题…" aria-label="搜索知识库"><select class="input" name="repo" aria-label="仓库范围" style="max-width:180px"><option value="">所有可访问仓库</option>${state.repos.map((r) => `<option value="${r.id}" ${r.id === repoId ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select><input type="hidden" name="kind" value="${esc(kind)}"><button class="btn primary" type="submit">${icon("search")}搜索</button></form><div class="search-meta"><span id="search-count">${q ? "正在检索…" : "输入一个关键词开始检索"}</span><div class="filters">${[
+    `<div class="page-head"><div><div class="eyebrow">SEARCH WITH EVIDENCE</div><h1 class="page-title">找到答案的出处。</h1><p class="intro">检索文档、源码和代码符号。每条结果都保留版本和来源。</p></div></div><form id="knowledge-search" class="search-box"><input class="input" id="search-input" name="q" value="${esc(q)}" placeholder="函数名、业务关键词，或一个问题…" aria-label="搜索知识库"><select class="input" name="repo" aria-label="仓库范围" style="max-width:180px"><option value="">所有可访问仓库</option>${state.repos.map((r) => `<option value="${r.id}" ${r.id === repoId ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select><input type="hidden" name="kind" value="${esc(kind)}"><button class="btn primary" type="submit">${icon("search")}搜索</button></form><div class="search-refinements"><label for="search-path-prefix">路径前缀<input class="input" id="search-path-prefix" form="knowledge-search" name="path_prefix" value="${esc(pathPrefix)}" placeholder="例如 docs/ 或 app/"></label><label for="search-language">文件语言<select class="input" id="search-language" form="knowledge-search" name="language"><option value="">全部语言</option>${languages.map(value => `<option value="${esc(value)}" ${value === language ? "selected" : ""}>${esc(value)}</option>`).join("")}</select></label></div><div class="search-meta"><span id="search-count">${q ? "正在检索…" : "输入一个关键词开始检索"}</span><div class="filters">${[
       ["", "全部"],
       ["document", "文档"],
       ["code", "源码"],
@@ -426,7 +429,7 @@ async function searchPage(params, routeId) {
   );
   if (!q) return;
   const data = await api(
-    "/api/search?" + new URLSearchParams({ q, repository_id: repoId, kind }),
+    "/api/search?" + new URLSearchParams({ q, repository_id: repoId, kind, path_prefix: pathPrefix, language }),
   );
   if (routeId !== state.routeId) return;
   document.querySelector("#search-count").textContent =

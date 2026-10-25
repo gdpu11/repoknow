@@ -920,6 +920,18 @@ a svg {
   font-size: 14px;
   padding: 14px 17px;
 }
+.search-refinements {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 220px);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.search-refinements label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .search-meta {
   display: flex;
   justify-content: space-between;

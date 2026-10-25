@@ -3,14 +3,20 @@ from collections import Counter
 import fcntl
 import json
 from pathlib import PurePosixPath
+import re
 import threading
 import time
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 from .git_source import GitSource, redact
 from .scanner import scan
 from .store import identifier
 
-SCANNER_VERSION = '2'
+SCANNER_VERSION = '3'
 
 
 class Engine:
@@ -140,7 +146,70 @@ class Engine:
             con.execute('DELETE FROM snapshots WHERE repository_id=? AND id!=?', (repo_id, snapshot))
 
 
-def dependencies(files):
+def toml_dependencies(name, content):
+    document = tomllib.loads(content)
+    result = []
+    if name == 'pyproject.toml':
+        project = document.get('project', {})
+        lists = []
+        if isinstance(project, dict):
+            lists.append(project.get('dependencies', []))
+            optional = project.get('optional-dependencies', {})
+            if isinstance(optional, dict):
+                lists.extend(optional.values())
+        groups = document.get('dependency-groups', {})
+        if isinstance(groups, dict):
+            # All groups are inspected; include-group references need no recursion.
+            lists.extend(groups.values())
+        for requirements in lists:
+            if not isinstance(requirements, list):
+                continue
+            for requirement in requirements:
+                match = re.match(r'^([A-Za-z0-9][A-Za-z0-9._-]*)(.*)$', requirement.strip()) if isinstance(requirement, str) else None
+                if match:
+                    result.append((match[1], match[2].strip()))
+        tool = document.get('tool', {})
+        poetry = tool.get('poetry', {}) if isinstance(tool, dict) else {}
+        if isinstance(poetry, dict):
+            tables = [poetry.get('dependencies', {}), poetry.get('dev-dependencies', {})]
+            groups = poetry.get('group', {})
+            if isinstance(groups, dict):
+                tables.extend(group.get('dependencies', {}) for group in groups.values() if isinstance(group, dict))
+            for table in tables:
+                if not isinstance(table, dict):
+                    continue
+                for package, spec in table.items():
+                    if package.lower() == 'python':
+                        continue
+                    if isinstance(spec, str):
+                        result.append((package, spec))
+                    elif isinstance(spec, dict):
+                        result.append((package, str(spec.get('version', ''))))
+    elif name == 'Cargo.toml':
+        scopes = [document]
+        workspace = document.get('workspace', {})
+        if isinstance(workspace, dict):
+            scopes.append(workspace)
+        targets = document.get('target', {})
+        if isinstance(targets, dict):
+            scopes.extend(scope for scope in targets.values() if isinstance(scope, dict))
+        for scope in scopes:
+            for group in ('dependencies', 'dev-dependencies', 'build-dependencies'):
+                table = scope.get(group, {})
+                if not isinstance(table, dict):
+                    continue
+                for package, spec in table.items():
+                    if isinstance(spec, str):
+                        result.append((package, spec))
+                    elif isinstance(spec, dict):
+                        version = spec.get('version')
+                        if not isinstance(version, str):
+                            version = next((key for key in ('workspace', 'path', 'git') if spec.get(key)), '')
+                        result.append((package, version))
+    return result
+
+
+def dependencies(files, limit=100):
     result = []
     for file in files:
         path, content = file['path'], file['content']
@@ -157,21 +226,28 @@ def dependencies(files):
             for line in content.splitlines():
                 value = line.strip()
                 if value and not value.startswith(('#', '-', 'http', 'git+')):
-                    import re
                     match = re.match(r'([\w.-]+)(.*)', value)
                     if match:
                         result.append({'name': match[1], 'version': match[2].strip(), 'path': path})
         elif name == 'go.mod':
-            import re
             for package, version in re.findall(r'(?m)^\s*(?:require\s+)?([\w.-]+/[\w./-]+)\s+(v[^\s]+)', content):
                 result.append({'name': package, 'version': version, 'path': path})
-    return result[:100]
+        elif name in ('pyproject.toml', 'Cargo.toml'):
+            try:
+                result.extend({'name': package, 'version': version, 'path': path}
+                              for package, version in toml_dependencies(name, content))
+            except ValueError:
+                continue
+    return result[:limit]
 
 
 def overview(files):
     modules = Counter(PurePosixPath(file['path']).parts[0] if '/' in file['path'] else '根目录' for file in files)
     candidates = {'main.go', 'main.py', 'manage.py', 'app.py', 'server.py', 'server.js',
                   'index.js', 'index.ts', 'main.ts', 'Dockerfile', 'Makefile'}
+    entrypoints = [file['path'] for file in files if PurePosixPath(file['path']).name in candidates]
+    packages = dependencies(files, limit=101)
     return {'modules': [{'name': name, 'files': count} for name, count in modules.most_common(30)],
-            'entrypoints': [file['path'] for file in files if PurePosixPath(file['path']).name in candidates][:30],
-            'dependencies': dependencies(files)}
+            'entrypoints': entrypoints[:30], 'dependencies': packages[:100],
+            'truncated': {'modules': len(modules) > 30, 'entrypoints': len(entrypoints) > 30,
+                          'dependencies': len(packages) > 100}}

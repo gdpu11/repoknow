@@ -18,7 +18,7 @@ A self-hosted, model-free knowledge base for GitHub and GitLab repositories.
 - **凭证复用**：Token 按登录账号和平台域名加密保存，同域名仓库自动复用。
 - **文档与源码**：Markdown、源码行号、模块目录、路径筛选和固定 commit 的来源链接。
 - **符号与调用线索**：解析 Python、Go、JavaScript、TypeScript / TSX、Java；其他支持的文本格式仍可全文检索。
-- **跨仓库检索**：搜索文档、代码和符号，返回 commit、文件路径、行号和原仓库链接。
+- **跨仓库检索**：搜索文档、代码和符号，支持中文单字、完整短语优先，以及路径前缀 / 文件语言筛选；返回 commit、文件路径、行号和原仓库链接。
 - **只读 MCP**：AI 客户端可查询知识库，服务端不调用模型。
 - **个人 MCP Key**：每个成员可为不同客户端创建命名 Key，并单独撤销；完整 Key 仅创建时显示一次。
 - **知识库设置**：所有者可修改名称、在私有和团队共享之间切换，无需重新导入。
@@ -146,11 +146,17 @@ MCP Key 用于访问当前账号有权读取的知识库，与后台拉代码的
 |---|---|
 | `knowledge_catalog` | 当前账号可见的仓库、索引状态和版本 |
 | `knowledge_search` | 跨仓库或限定仓库搜索文档、源码、符号 |
+| `knowledge_get_overview` | 技术栈、顶层模块、入口和依赖概览，不返回文件正文 |
+| `knowledge_list_files` | 分页浏览已索引目录的直接子目录和文件 |
 | `knowledge_get_source` | 按完整 commit、路径读取最多 200 行 / 32 KiB |
-| `knowledge_get_symbols` | 查询函数、方法、类等定义 |
+| `knowledge_get_symbols` | 查询函数、方法、类等定义；按文件读取符号大纲并分页 |
 | `knowledge_trace_dependency` | 查询符号的直接调用方、被调用方和来源 |
 
 MCP 不提供导入、同步、Token 管理或代码修改。管理操作使用界面或登录认证的管理 API。源码查询严格校验 commit，版本不匹配会报错，不替换成新版本的同一行。
+
+推荐先查询概览、浏览目录，再按 `path` 获取文件符号大纲。目录和符号分页均返回 `next_offset`；后续请求带上上一页 `commit_id` 作为 `commit`，同步导致版本变化时会明确报错。目录只包含成功索引的文件，不代表原仓库完整文件树。依赖概览支持 `package.json`、`requirements*.txt`、`go.mod`、PEP 621 / Poetry / uv 风格的 `pyproject.toml` 和 `Cargo.toml`，仅提取清单，不安装或解析远端依赖。
+
+已有索引需要手动点一次 **同步更新** 才能启用新增的中文单字索引，即使远端 commit 相同也会重建一次。之后相同 commit 仍复用索引；本次升级不会自动批量同步你的仓库。
 
 Codex 配置示例见 [MCP 接入说明](docs/MCP.md)。源码包只提供占位配置，不会自动修改客户端的全局配置。
 

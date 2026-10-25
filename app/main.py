@@ -86,9 +86,22 @@ class SourceInput(BaseModel):
     end_line: int = Field(default=100, ge=1)
 
 
-class SymbolInput(BaseModel):
+class RepositoryQueryInput(BaseModel):
     repository_id: str = Field(min_length=1, max_length=64)
+    commit: str = Field(default='', pattern=r'^(?:[0-9a-f]{40}(?:[0-9a-f]{24})?)?$')
+
+
+class SymbolInput(RepositoryQueryInput):
     q: str = Field(default='', max_length=200)
+    path: str = Field(default='', max_length=2000)
+    offset: int = Field(default=0, ge=0, le=2147483647)
+    limit: int = Field(default=300, ge=1, le=300)
+
+
+class DirectoryInput(RepositoryQueryInput):
+    path: str = Field(default='', max_length=2000)
+    offset: int = Field(default=0, ge=0, le=20000)
+    limit: int = Field(default=100, ge=1, le=200)
 
 
 class TraceInput(BaseModel):
@@ -101,6 +114,8 @@ class SearchInput(BaseModel):
     repository_id: str = Field(default='', max_length=64)
     kind: str = Field(default='', pattern='^(|code|document|symbol)$')
     limit: int = Field(default=30, ge=1, le=100)
+    path_prefix: str = Field(default='', max_length=2000)
+    language: str = Field(default='', max_length=50)
 
 
 def create_app(data_dir=None, start_worker=True):
@@ -513,32 +528,41 @@ def create_app(data_dir=None, start_worker=True):
     def find_evidence(params, user):
         terms = query_terms(params.q)
         if not terms:
-            return {'results': [], 'terms': [], 'total': 0}
+            return {'results': [], 'terms': [], 'total': 0, 'truncated': False}
+        phrase = params.q.strip().lower()
         expression = ' OR '.join('"' + term.replace('"', '""') + '"' for term in terms)
         with store.db() as con:
-            rows = con.execute('''SELECT c.path,c.start_line,c.end_line,c.kind,c.name,c.text,
+            # SQLite lower() only handles ASCII; candidate selection and final
+            # ranking must use the same Unicode rules before the 300-row cap.
+            con.create_function('unicode_lower', 1, str.lower, deterministic=True)
+            rows = con.execute('''SELECT c.path,c.start_line,c.end_line,c.kind,c.name,c.text,f.language,
                 r.id AS repository_id,r.name AS repository_name,r.url,r.platform,s.commit_id,
                 bm25(chunks_fts) AS rank
                 FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid
                 JOIN repositories r ON r.current_snapshot=c.snapshot_id
                 JOIN snapshots s ON s.id=c.snapshot_id
+                JOIN files f ON f.snapshot_id=c.snapshot_id AND f.path=c.path
                 WHERE chunks_fts MATCH ? AND (r.owner_id=? OR r.visibility='shared')
                 AND (?='' OR r.id=?) AND (?='' OR c.kind=?)
-                ORDER BY rank LIMIT 300''', (expression, user['id'], params.repository_id,
-                params.repository_id, params.kind, params.kind)).fetchall()
+                AND (?='' OR substr(c.path,1,length(?))=?) AND (?='' OR f.language=? COLLATE NOCASE)
+                ORDER BY (instr(unicode_lower(c.name),?)>0) DESC,(instr(unicode_lower(c.text),?)>0) DESC,rank,c.id
+                LIMIT 301''', (expression, user['id'], params.repository_id,
+                params.repository_id, params.kind, params.kind, params.path_prefix,
+                params.path_prefix, params.path_prefix, params.language, params.language, phrase, phrase)).fetchall()
         ranked = []
-        for row in rows:
+        for row in rows[:300]:
             item = dict(row)
-            name_match = params.q.lower() in item['name'].lower()
-            item['score'] = -item.pop('rank') + (10 if name_match else 0)
+            name_match = phrase in item['name'].lower()
+            phrase_match = phrase in item['text'].lower()
+            item['score'] = -item.pop('rank') + (10 if name_match else 0) + (5 if phrase_match else 0)
             item['text_truncated'] = len(item['text']) > 16000
             item['text'] = item['text'][:16000]
             item['source_url'] = source_url(item.pop('url'), item.pop('platform'), item['commit_id'],
                                             item['path'], item['start_line'], item['end_line'])
-            ranked.append(item)
-        ranked.sort(key=lambda item: item['score'], reverse=True)
+            ranked.append((name_match, phrase_match, item['score'], item))
+        ranked.sort(key=lambda item: item[:3], reverse=True)
         deduped, seen = [], set()
-        for item in ranked:
+        for _, _, _, item in ranked:
             # A function chunk and a covering file chunk may contain the same evidence.
             key = (item['repository_id'], item['path'], item['start_line'], item['end_line'])
             if key in seen:
@@ -546,31 +570,86 @@ def create_app(data_dir=None, start_worker=True):
             seen.add(key)
             deduped.append(item)
         return {'results': deduped[:params.limit], 'terms': terms,
-                'total': len(deduped), 'truncated': len(rows) == 300}
+                'total': len(deduped), 'truncated': len(rows) > 300}
 
     @app.get('/api/search')
     def search(q: str = Query(min_length=1, max_length=500), repository_id: str = '',
                kind: str = Query(default='', pattern='^(|code|document|symbol)$'),
-               limit: int = Query(default=30, ge=1, le=100), user=Depends(principal)):
-        return find_evidence(SearchInput(q=q, repository_id=repository_id, kind=kind, limit=limit), user)
+               limit: int = Query(default=30, ge=1, le=100),
+               path_prefix: str = Query(default='', max_length=2000),
+               language: str = Query(default='', max_length=50), user=Depends(principal)):
+        return find_evidence(SearchInput(q=q, repository_id=repository_id, kind=kind, limit=limit,
+                                        path_prefix=path_prefix, language=language), user)
 
-    def lookup_symbols(repo_id, q, user, limit=300):
+    def current_version(repo, commit):
+        if commit and repo['commit_id'] != commit:
+            raise HTTPException(409, '索引版本已更新，请从头查询当前索引；不会混合其他版本的分页结果')
+
+    def lookup_symbols(repo_id, q, user, limit=300, path='', offset=0, commit=''):
         with store.db() as con:
             repo = repository(con, repo_id, user)
+            current_version(repo, commit)
             rows = con.execute('''SELECT * FROM symbols WHERE snapshot_id=? AND
                 (name LIKE ? ESCAPE '\\' OR qualified_name LIKE ? ESCAPE '\\')
-                ORDER BY path,start_line LIMIT ?''', (repo['current_snapshot'],
+                AND (?='' OR path=?) ORDER BY path,start_line,id LIMIT ? OFFSET ?''', (repo['current_snapshot'],
                 '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%',
-                '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%', limit)).fetchall()
-            result = [dict(row) for row in rows]
+                '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%', path, path,
+                limit + 1, offset)).fetchall()
+            result = [dict(row) for row in rows[:limit]]
             for item in result:
                 item['source_url'] = source_url(repo['url'], repo['platform'], repo['commit_id'],
                                                 item['path'], item['start_line'], item['end_line'])
-            return {'symbols': result, 'commit_id': repo['commit_id'], 'truncated': len(result) == limit}
+            more = len(rows) > limit
+            return {'symbols': result, 'commit_id': repo['commit_id'], 'truncated': more,
+                    'next_offset': offset + limit if more else None}
 
     @app.get('/api/repositories/{repo_id}/symbols')
-    def symbols(repo_id: str, q: str = Query(default='', max_length=200), user=Depends(principal)):
-        return lookup_symbols(repo_id, q, user)
+    def symbols(repo_id: str, q: str = Query(default='', max_length=200),
+                path: str = Query(default='', max_length=2000), offset: int = Query(default=0, ge=0, le=2147483647),
+                limit: int = Query(default=300, ge=1, le=300),
+                commit: str = Query(default='', pattern=r'^(?:[0-9a-f]{40}(?:[0-9a-f]{24})?)?$'),
+                user=Depends(principal)):
+        return lookup_symbols(repo_id, q, user, limit=limit, path=path, offset=offset, commit=commit)
+
+    def knowledge_overview(params, user):
+        # Reuse the Web overview in the same read transaction; never return file bodies.
+        with store.db() as con:
+            repo = repository(con, params.repository_id, user)
+            current_version(repo, params.commit)
+            files = [dict(row) for row in con.execute(
+                'SELECT path,content FROM files WHERE snapshot_id=? ORDER BY path', (repo['current_snapshot'],))]
+            statistics = json.loads(repo['statistics'] or '{}')
+            return {'repository_id': repo['id'], 'name': repo['name'], 'url': repo['url'],
+                    'branch': repo['branch'], 'commit_id': repo['commit_id'], 'indexed_at': repo['indexed_at'],
+                    'statistics': {key: statistics.get(key) for key in
+                        ('files', 'documents', 'symbols', 'relations', 'languages', 'parsed_languages')},
+                    'overview': overview(files)}
+
+    def list_files(params, user):
+        if params.path.startswith('/'):
+            raise HTTPException(422, '目录请使用仓库内的相对路径，根目录留空')
+        path = params.path.removesuffix('/')
+        if path and (path.startswith('/') or '\\' in path or any(p in ('', '.', '..') for p in path.split('/'))):
+            raise HTTPException(422, '目录请使用仓库内的相对路径，根目录留空')
+        prefix = path + '/' if path else ''
+        with store.db() as con:
+            repo = repository(con, params.repository_id, user)
+            current_version(repo, params.commit)
+            rows = con.execute('''SELECT path,kind,language,line_count FROM files WHERE snapshot_id=?
+                AND substr(path,1,length(?))=? ORDER BY path''', (repo['current_snapshot'], prefix, prefix))
+            directories, entries = set(), []
+            for row in rows:
+                relative = row['path'][len(prefix):]
+                if '/' in relative:
+                    directories.add(prefix + relative.split('/', 1)[0] + '/')
+                else:
+                    entries.append(dict(row) | {'type': 'file'})
+            items = [{'path': p, 'type': 'directory'} for p in sorted(directories)] + entries
+            end = params.offset + params.limit
+            return {'repository_id': repo['id'], 'commit_id': repo['commit_id'], 'path': path,
+                    'entries': items[params.offset:end], 'total': len(items), 'truncated': len(items) > end,
+                    'next_offset': end if len(items) > end else None,
+                    'note': '仅列出当前成功索引中的文件；已过滤、二进制或不支持的文件不在清单中。'}
 
     def trace(repo_id, symbol_id, user):
         with store.db() as con:
@@ -624,9 +703,13 @@ def create_app(data_dir=None, start_worker=True):
          'inputSchema': {'type': 'object', 'properties': {}}},
         {'name': 'knowledge_search', 'description': '检索源码和文档，返回路径、行号、commit 和来源链接',
          'inputSchema': SearchInput.model_json_schema()},
+        {'name': 'knowledge_get_overview', 'description': '读取仓库技术栈、顶层模块、入口和依赖概览，不返回文件正文',
+         'inputSchema': RepositoryQueryInput.model_json_schema()},
+        {'name': 'knowledge_list_files', 'description': '分页列出已索引目录的直接子目录和文件；后续分页传入 commit_id 作为 commit 固定版本',
+         'inputSchema': DirectoryInput.model_json_schema()},
         {'name': 'knowledge_get_source', 'description': '按完整 commit 读取最多 200 行来源，不回退到其他版本',
          'inputSchema': SourceInput.model_json_schema()},
-        {'name': 'knowledge_get_symbols', 'description': '查询仓库中的函数、类、方法定义',
+        {'name': 'knowledge_get_symbols', 'description': '分页查询函数、类、方法定义；path 限定文件大纲，后续分页传 commit 固定版本',
          'inputSchema': SymbolInput.model_json_schema()},
         {'name': 'knowledge_trace_dependency', 'description': '查询一个符号的直接调用方和被调用方，含静态匹配置信度',
          'inputSchema': TraceInput.model_json_schema()},
@@ -659,11 +742,16 @@ def create_app(data_dir=None, start_worker=True):
                     data = repositories(user)
                 elif name == 'knowledge_search':
                     data = find_evidence(SearchInput.model_validate(args), user)
+                elif name == 'knowledge_get_overview':
+                    data = knowledge_overview(RepositoryQueryInput.model_validate(args), user)
+                elif name == 'knowledge_list_files':
+                    data = list_files(DirectoryInput.model_validate(args), user)
                 elif name == 'knowledge_get_source':
                     data = read_source(args, user)
                 elif name == 'knowledge_get_symbols':
                     parsed = SymbolInput.model_validate(args)
-                    data = lookup_symbols(parsed.repository_id, parsed.q, user)
+                    data = lookup_symbols(parsed.repository_id, parsed.q, user, limit=parsed.limit,
+                                          path=parsed.path, offset=parsed.offset, commit=parsed.commit)
                 elif name == 'knowledge_trace_dependency':
                     parsed = TraceInput.model_validate(args)
                     data = trace(parsed.repository_id, parsed.symbol_id, user)

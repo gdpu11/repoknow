@@ -180,7 +180,7 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/repositories', headers=headers).status_code, 200)
         self.assertEqual(self.client.post('/api/repositories', json={'url': 'https://github.com/a/b'}, headers=headers).status_code, 403)
         tools = self.client.post('/mcp', json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, headers=headers).json()
-        self.assertEqual(len(tools['result']['tools']), 5)
+        self.assertEqual(len(tools['result']['tools']), 7)
 
     def test_mcp_source_requires_exact_current_commit(self):
         repo_id = self.indexed()

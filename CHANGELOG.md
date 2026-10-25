@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Index individual Han characters alongside bigrams while retaining bigram queries; prioritize exact name/text substrings before the search candidate limit. Add literal path-prefix and language filters to Web and MCP search.
+- Add read-only MCP overview and directory tools, plus file-scoped symbol outlines and pagination with optional commit pinning. Expose truncation and next-page offsets.
+- Extract PEP 621, Poetry, dependency-group and Cargo manifest dependencies without resolving or installing them. Use the standard TOML parser on Python 3.11+ and Tomli on 3.10.
+- Increment the scanner version so an explicit sync rebuilds old Chinese indexes even at an unchanged commit; retain the existing snapshot until publication succeeds.
 - Let each signed-in member create named read-only MCP Keys and revoke individual clients. Show new Keys once, store only hashes, and preserve existing Keys during metadata migration.
 - Allow repository owners to rename a knowledge base and change private/shared visibility without reimporting or replacing its index. Apply visibility to Web and all MCP queries.
 - Clear credential dialogs when closing them or returning to login; reject Key creation if the login session is revoked during the request.

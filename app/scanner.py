@@ -44,15 +44,18 @@ DEFINITIONS = {
 CALLS = {'call', 'call_expression', 'method_invocation'}
 
 
-def words(text):
-    # Split identifiers and include Han bigrams so Chinese text is searchable
-    # with SQLite's built-in tokenizer; no embedding model is involved.
+def words(text, han_unigrams=True):
+    # Index Han characters as well as bigrams; multi-character queries keep
+    # bigrams so common individual characters do not dilute their recall.
+    # SQLite's built-in tokenizer is sufficient; no embedding model is involved.
     text = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', text)
     values = re.findall(r'[a-zA-Z0-9_]+|[\u3400-\u9fff]+', text.lower())
     result = []
     for value in values:
         if re.match(r'[\u3400-\u9fff]', value):
             result.extend(value[i:i + 2] for i in range(max(1, len(value) - 1)))
+            if han_unigrams and len(value) > 1:
+                result.extend(value)
         else:
             result.append(value)
     return result
@@ -67,7 +70,7 @@ def query_terms(query):
         if key in query:
             query += ' ' + value
     stop = {'这个', '项目', '如何', '怎么', '哪里', '什么', '哪些', '代码', '一个', '的'}
-    return list(dict.fromkeys(term for term in words(query) if term not in stop))[:24]
+    return list(dict.fromkeys(term for term in words(query, han_unigrams=False) if term not in stop))[:24]
 
 
 def eligible(entry):

@@ -16,6 +16,7 @@ The following direct runtime dependency licenses were checked against installed 
 | tree-sitter-javascript | 0.25.0 | MIT | [tree-sitter/tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript) |
 | tree-sitter-python | 0.25.0 | MIT | [tree-sitter/tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python) |
 | tree-sitter-typescript | 0.23.2 | MIT | [tree-sitter/tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) |
+| Tomli (Python 3.10 only) | 2.5.0 | MIT | [hukkin/tomli](https://github.com/hukkin/tomli) |
 
 `httpx` (BSD-3-Clause) is a development/test dependency. Transitive packages and platform-specific alternatives are recorded in `uv.lock`; their distribution license files remain with those packages when installed. For example, the lock includes certifi (MPL-2.0), typing-extensions (PSF-2.0), and OpenTelemetry API (Apache-2.0). Recheck this inventory when changing the lock or distributing built runtime images.
 
