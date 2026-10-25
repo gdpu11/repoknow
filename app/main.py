@@ -33,6 +33,15 @@ class AccountAccessInput(BaseModel):
     disabled: bool
 
 
+class ApiKeyInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class RepositorySettingsInput(BaseModel):
+    name: str = Field(min_length=1, max_length=1000)
+    visibility: str = Field(pattern='^(private|shared)$')
+
+
 class RepositoryInput(BaseModel):
     url: str = Field(min_length=5, max_length=1000)
     name: str = Field(default='', max_length=1000)
@@ -150,6 +159,11 @@ def create_app(data_dir=None, start_worker=True):
             raise HTTPException(403, '此操作需要管理员登录；只读 API Key 不能管理成员')
         return user
 
+    def web_user(user=Depends(principal)):
+        if user['kind'] != 'web':
+            raise HTTPException(403, '请使用登录会话管理个人 MCP Key')
+        return user
+
     def repository(con, repo_id, user, owner=False):
         result = store.repository(repo_id, user['id'], owner, connection=con)
         if not result:
@@ -193,6 +207,39 @@ def create_app(data_dir=None, start_worker=True):
     @app.get('/api/auth/me')
     def me(user=Depends(principal)):
         return {'id': user['id'], 'username': user['username'], 'is_admin': bool(user['is_admin'])}
+
+    @app.get('/api/auth/keys')
+    def list_api_keys(user=Depends(web_user)):
+        with store.db() as con:
+            return [dict(row) for row in con.execute('''SELECT k.id,k.name,k.created_at
+                FROM api_keys k JOIN sessions s ON s.hash=k.session_hash
+                WHERE s.user_id=? AND s.kind='api' ORDER BY k.created_at DESC,k.id''', (user['id'],))]
+
+    @app.post('/api/auth/keys', status_code=201)
+    def add_api_key(body: ApiKeyInput, user=Depends(web_user)):
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(422, '请填写 Key 名称')
+        with store.db(write=True) as con:
+            if not con.execute('''SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id
+                WHERE s.hash=? AND s.user_id=? AND s.kind='web' AND u.disabled=0
+                AND (s.expires_at=0 OR s.expires_at>?)''',
+                (user['session_hash'], user['id'], time.time())).fetchone():
+                raise HTTPException(401, '登录已失效，请重新登录')
+            count = con.execute("SELECT count(*) FROM sessions WHERE user_id=? AND kind='api'",
+                                (user['id'],)).fetchone()[0]
+            if count >= 20:
+                raise HTTPException(409, '每个账号最多保留 20 个 Key，请先撤销不再使用的 Key')
+            return store.create_api_key(con, user['id'], name)
+
+    @app.delete('/api/auth/keys/{key_id}')
+    def revoke_api_key(key_id: str, user=Depends(web_user)):
+        with store.db(write=True) as con:
+            changed = con.execute('''DELETE FROM sessions WHERE user_id=? AND kind='api'
+                AND hash=(SELECT session_hash FROM api_keys WHERE id=?)''', (user['id'], key_id)).rowcount
+            if not changed:
+                raise HTTPException(404, 'Key 不存在或无权撤销')
+        return {'ok': True}
 
     def public_account(row):
         return {'id': row['id'], 'username': row['username'], 'created_at': row['created_at'],
@@ -406,6 +453,17 @@ def create_app(data_dir=None, start_worker=True):
             result['overview'] = overview(files)
             result['files'] = [{key: file[key] for key in ('path', 'kind', 'language', 'line_count')} for file in files]
         return result
+
+    @app.put('/api/repositories/{repo_id}')
+    def update_repository(repo_id: str, body: RepositorySettingsInput, user=Depends(principal)):
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(422, '请填写知识库名称')
+        with store.db(write=True) as con:
+            repository(con, repo_id, user, owner=True)
+            con.execute('UPDATE repositories SET name=?,visibility=? WHERE id=?',
+                        (name, body.visibility, repo_id))
+        return {'ok': True}
 
     @app.post('/api/repositories/{repo_id}/sync')
     def sync(repo_id: str, user=Depends(principal)):

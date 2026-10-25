@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Let each signed-in member create named read-only MCP Keys and revoke individual clients. Show new Keys once, store only hashes, and preserve existing Keys during metadata migration.
+- Allow repository owners to rename a knowledge base and change private/shared visibility without reimporting or replacing its index. Apply visibility to Web and all MCP queries.
+- Clear credential dialogs when closing them or returning to login; reject Key creation if the login session is revoked during the request.
+
 ## 0.2.0 — 2026-10-25 (public alpha)
 
 - Close public registration by default; allow explicit opt-in with `REPOKNOW_ALLOW_REGISTRATION=1`.

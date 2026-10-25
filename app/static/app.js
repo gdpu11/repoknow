@@ -115,7 +115,7 @@ async function api(path, body, method) {
   return result;
 }
 function sidebar() {
-  return `<aside class="sidebar" id="sidebar"><a href="#/" class="brand"><span class="brand-mark">R</span>RepoKnow<small>LOCAL</small></a><a class="nav-link ${state.view === "home" ? "active" : ""}" href="#/">${icon("grid")}知识空间</a><a class="nav-link ${state.view === "search" ? "active" : ""}" href="#/search">${icon("search")}全局检索</a><div class="nav-label">REPOSITORIES · 仓库</div><button class="nav-add" data-action="import">${icon("plus")}导入仓库 / 组 / 组织</button><button class="nav-add" data-action="connections">${icon("lock")}平台凭证</button>${state.user?.is_admin ? `<button class="nav-add" data-action="accounts">${icon("shield")}团队成员</button>` : ""}<nav class="repo-nav">${state.repos.map((r) => `<a href="${link(r.id)}" class="${state.repo?.id === r.id ? "active" : ""}">${icon(r.platform === "github" ? "git" : "branch")}<span>${esc(r.name)}</span><i class="status-dot ${esc(r.sync_state)}"></i></a>`).join("") || '<p class="small-note">导入一个仓库，开始积累知识。</p>'}</nav><div class="sidebar-footer"><span class="avatar">${esc(state.user?.username?.slice(0, 1).toUpperCase())}</span><span>${esc(state.user?.username)}</span><button data-action="logout" aria-label="退出登录" title="退出登录">${icon("logout")}</button></div></aside>`;
+  return `<aside class="sidebar" id="sidebar"><a href="#/" class="brand"><span class="brand-mark">R</span>RepoKnow<small>LOCAL</small></a><a class="nav-link ${state.view === "home" ? "active" : ""}" href="#/">${icon("grid")}知识空间</a><a class="nav-link ${state.view === "search" ? "active" : ""}" href="#/search">${icon("search")}全局检索</a><div class="nav-label">REPOSITORIES · 仓库</div><button class="nav-add" data-action="import">${icon("plus")}导入仓库 / 组 / 组织</button><button class="nav-add" data-action="connections">${icon("lock")}平台凭证</button><button class="nav-add" data-action="mcp-keys">${icon("terminal")}MCP 接入</button>${state.user?.is_admin ? `<button class="nav-add" data-action="accounts">${icon("shield")}团队成员</button>` : ""}<nav class="repo-nav">${state.repos.map((r) => `<a href="${link(r.id)}" class="${state.repo?.id === r.id ? "active" : ""}">${icon(r.platform === "github" ? "git" : "branch")}<span>${esc(r.name)}</span><i class="status-dot ${esc(r.sync_state)}"></i></a>`).join("") || '<p class="small-note">导入一个仓库，开始积累知识。</p>'}</nav><div class="sidebar-footer"><span class="avatar">${esc(state.user?.username?.slice(0, 1).toUpperCase())}</span><span>${esc(state.user?.username)}</span><button data-action="logout" aria-label="退出登录" title="退出登录">${icon("logout")}</button></div></aside>`;
 }
 function shell(content, breadcrumb = "知识空间") {
   app.innerHTML = `<div class="shell">${sidebar()}<main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="展开菜单">${icon("menu")}</button><a href="#/">工作台</a><span>/</span><strong>${esc(breadcrumb)}</strong></div><button class="top-search" data-action="focus-search">${icon("search")}搜索代码、文档、符号<kbd>⌘ K</kbd></button></header><div class="workspace" id="content">${content}</div></main></div>`;
@@ -173,7 +173,7 @@ const tabs = [
 function repositoryHeader(tab) {
   const r = state.repo;
   const commit = state.file?.commit_id || r.commit_id;
-  return `<div class="page-head repo-page-head"><div><div class="eyebrow">${esc(r.platform.toUpperCase())} REPOSITORY</div><div class="repo-heading"><span class="platform-icon ${r.platform}">${icon("git")}</span><h1 class="page-title">${esc(r.name)}</h1><span class="pill private">${icon(r.visibility === "private" ? "lock" : "book")}${r.visibility === "private" ? "私有知识库" : "团队共享"}</span></div><div class="repo-subline"><span>${icon("branch")} ${esc(r.branch || "默认分支")}</span>${commit ? `<code>${esc(commit.slice(0, 10))}</code>` : ""}<span>索引于 ${date(r.indexed_at)}</span></div></div><div class="toolbar"><a class="btn" target="_blank" rel="noopener noreferrer" href="${esc(r.url.replace(/\.git$/, ""))}">${icon("external")}原仓库</a>${r.owner_id === state.user.id ? `<button class="btn" data-action="credentials">更新凭证</button><button class="btn primary" data-action="sync" ${["queued", "running"].includes(r.sync_state) ? "disabled" : ""}>${icon("refresh")}${["queued", "running"].includes(r.sync_state) ? "同步中" : "同步更新"}</button>` : ""}</div></div>${r.error ? `<div class="banner error">${icon("clock")}<div>${esc(r.error)}${r.current_snapshot ? "<br>上一版索引仍可正常使用。" : ""}</div></div>` : ""}${["queued", "running"].includes(r.sync_state) ? `<div class="banner">${icon("refresh")}正在同步仓库并建立索引，完成后页面会自动更新。</div>` : ""}<nav class="tabs">${tabs.map(([key, label, ico]) => `<a href="${link(r.id, key)}" class="tab ${key === tab ? "active" : ""}">${icon(ico)}${label}${key === "docs" ? `<span class="tab-count">${r.statistics.documents || 0}</span>` : key === "symbols" ? `<span class="tab-count">${r.statistics.symbols || 0}</span>` : ""}</a>`).join("")}</nav>`;
+  return `<div class="page-head repo-page-head"><div><div class="eyebrow">${esc(r.platform.toUpperCase())} REPOSITORY</div><div class="repo-heading"><span class="platform-icon ${r.platform}">${icon("git")}</span><h1 class="page-title">${esc(r.name)}</h1><span class="pill private">${icon(r.visibility === "private" ? "lock" : "book")}${r.visibility === "private" ? "私有知识库" : "团队共享"}</span></div><div class="repo-subline"><span>${icon("branch")} ${esc(r.branch || "默认分支")}</span>${commit ? `<code>${esc(commit.slice(0, 10))}</code>` : ""}<span>索引于 ${date(r.indexed_at)}</span></div></div><div class="toolbar"><a class="btn" target="_blank" rel="noopener noreferrer" href="${esc(r.url.replace(/\.git$/, ""))}">${icon("external")}原仓库</a>${r.owner_id === state.user.id ? `<button class="btn" data-action="repository-settings">知识库设置</button><button class="btn" data-action="credentials">更新凭证</button><button class="btn primary" data-action="sync" ${["queued", "running"].includes(r.sync_state) ? "disabled" : ""}>${icon("refresh")}${["queued", "running"].includes(r.sync_state) ? "同步中" : "同步更新"}</button>` : ""}</div></div>${r.error ? `<div class="banner error">${icon("clock")}<div>${esc(r.error)}${r.current_snapshot ? "<br>上一版索引仍可正常使用。" : ""}</div></div>` : ""}${["queued", "running"].includes(r.sync_state) ? `<div class="banner">${icon("refresh")}正在同步仓库并建立索引，完成后页面会自动更新。</div>` : ""}<nav class="tabs">${tabs.map(([key, label, ico]) => `<a href="${link(r.id, key)}" class="tab ${key === tab ? "active" : ""}">${icon(ico)}${label}${key === "docs" ? `<span class="tab-count">${r.statistics.documents || 0}</span>` : key === "symbols" ? `<span class="tab-count">${r.statistics.symbols || 0}</span>` : ""}</a>`).join("")}</nav>`;
 }
 function renderRepo(tab, content) {
   shell(repositoryHeader(tab) + content, state.repo.name);
@@ -504,6 +504,21 @@ function dialogFrame(title, intro, content) {
   dialog.innerHTML = `<div class="dialog-head"><div><h2 id="import-title">${esc(title)}</h2><p>${esc(intro)}</p></div><button class="btn ghost small" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>${content}`;
   if (!dialog.open) dialog.showModal();
 }
+function repositorySettingsDialog() {
+  const r = state.repo;
+  dialogFrame("知识库设置", "修改名称或访问范围后立即生效，无需重新导入。", `<form id="repository-settings-form" class="dialog-body"><input type="hidden" name="repository_id" value="${esc(r.id)}"><div class="field"><label for="settings-name">知识库名称</label><input class="input" id="settings-name" name="name" required maxlength="1000" value="${esc(r.name)}"></div><div class="field"><label for="settings-visibility">知识库可见性</label><select class="input" id="settings-visibility" name="visibility"><option value="private" ${r.visibility === "private" ? "selected" : ""}>仅自己可见</option><option value="shared" ${r.visibility === "shared" ? "selected" : ""}>与所有启用的登录成员共享</option></select><small>共享允许成员通过网页和 MCP 读取该知识库的代码与文档。改回私有后，其他成员的新请求将失去访问权限；已经读取或保存的内容无法收回。</small></div><div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="close-dialog">取消</button><button class="btn primary" type="submit">保存设置</button></div></form>`);
+}
+async function mcpKeysDialog() {
+  const keys = await api("/api/auth/keys");
+  dialogFrame("MCP 接入", "为自己的 AI 客户端创建只读 Key，查询自己可见的私有与共享知识库。", `<div class="dialog-body"><div class="field"><label for="mcp-endpoint">MCP 服务地址</label><input class="input" id="mcp-endpoint" readonly value="${esc(location.origin + "/mcp")}"><small>使用 Streamable HTTP，认证头为 Authorization: Bearer &lt;你的 Key&gt;。客户端需要能够访问此地址。</small></div><p class="small-note">每个客户端建议使用独立 Key，默认长期有效，可单独撤销。请用自己的账号创建，不要共用管理员 Key；Key 不赋予导入、同步或管理权限。</p><div class="link-list">${keys.map(k => `<div class="meta-row"><span><strong>${esc(k.name)}</strong><br>${k.created_at ? "创建于 " + date(k.created_at) : "升级前创建，时间未记录"}</span><button class="btn small" data-action="revoke-key" data-id="${esc(k.id)}" data-name="${esc(k.name)}">撤销</button></div>`).join("") || '<p class="small-note">尚无 Key，创建后即可接入。</p>'}</div><hr class="divider"><form id="mcp-key-form"><div class="field"><label for="mcp-key-name">新 Key 名称</label><input class="input" id="mcp-key-name" name="name" required maxlength="100" placeholder="例如：工作电脑 Codex" autocomplete="off"><small>每个账号最多 20 个 Key，完整 Key 只在创建成功时显示一次。</small></div><div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="close-dialog">关闭</button><button class="btn primary" type="submit" ${keys.length >= 20 ? "disabled" : ""}>创建只读 Key</button></div></form></div>`);
+}
+function showCreatedKey(result) {
+  dialogFrame("MCP Key 已创建", "请现在复制并保存在客户端配置中，关闭后无法再次查看完整 Key。", `<div class="dialog-body"><div class="field"><label for="created-mcp-key">${esc(result.name)} · 新 MCP Key</label><input class="input" id="created-mcp-key" readonly autocomplete="off" spellcheck="false"></div><p class="small-note">此 Key 只能查询你有权限读取的知识库。不要放进 Git 仓库、截图或公开聊天；丢失后请撤销并重新创建。</p><div class="dialog-actions"><button class="btn ghost" type="button" data-action="mcp-keys">已保存，返回列表</button><button class="btn primary" type="button" data-action="copy-key">复制 Key</button></div></div>`);
+  document.querySelector("#created-mcp-key").value = result.key;
+}
+dialog.addEventListener("close", () => {
+  if (!dialog.open) dialog.replaceChildren();
+});
 async function importDialog(credentialsOnly = false) {
   if (credentialsOnly) {
     dialogFrame("更新仓库凭证", "仅更新此仓库，并取消它对平台凭证的引用；下次同步生效。", `<form id="credential-form" class="dialog-body">${gitCredentialFields()}<div class="field-error" role="alert"></div><div class="dialog-actions"><button class="btn ghost" type="button" data-action="close-dialog">取消</button><button class="btn primary" type="submit">保存凭证</button></div></form>`);
@@ -539,6 +554,13 @@ function groupResult(result) {
 }
 
 function showLogin() {
+  ++state.routeId;
+  state.repos = [];
+  state.connections = [];
+  state.repo = null;
+  state.file = null;
+  dialog.close();
+  dialog.replaceChildren();
   if (!state.registrationEnabled) state.register = false;
   app.innerHTML = `<div class="login-screen"><section class="login-visual"><div class="brand"><span class="brand-mark">R</span>RepoKnow</div><h1>代码有脉络。<br>知识<span>有出处。</span></h1><p>连接你的 Git 仓库，把散落的代码和文档<br>汇成一处可以探索、检索与核对的知识空间。</p><div class="login-features"><div>${icon("git")}GitHub · GitLab · 自建实例</div><div>${icon("graph")}源码、文档、符号与调用线索</div><div>${icon("shield")}私有仓库与来源版本追溯</div></div></section><section class="login-form-side"><form id="account-form" class="login-box"><div class="eyebrow">WELCOME TO YOUR KNOWLEDGE SPACE</div><h2>${state.register ? "创建你的账户" : "欢迎回来"}</h2><p class="intro">${state.register ? "仓库默认仅自己可见。" : "登录并探索你的仓库知识库。"}</p><div class="field"><label for="username">账号</label><input class="input" id="username" name="username" required minlength="2" maxlength="64" autocomplete="username" placeholder="输入账号"></div><div class="field"><label for="password">密码</label><input class="input" id="password" name="password" type="password" required minlength="10" maxlength="200" autocomplete="${state.register ? "new-password" : "current-password"}" placeholder="至少 10 个字符"></div><div id="login-error" class="field-error" role="alert"></div><button class="btn primary" type="submit">${state.register ? "创建账户" : "登录知识空间"} ${icon("arrow")}</button><p class="login-bottom">${state.registrationEnabled ? `${state.register ? "已有账户？" : "还没有账户？"} <button type="button" data-action="register-toggle">${state.register ? "登录" : "创建账户"}</button>` : "本实例由管理员开通账户，请联系管理员。"}</p><p class="login-note">本地管理员首次登录信息保存在项目目录的 <code>.data/admin.json</code>。<br>默认在本机运行，内容不会自动发布到外网。</p></form></section></div>`;
 }
@@ -555,6 +577,25 @@ document.addEventListener("click", async (event) => {
   try {
     if (action === "import") await importDialog();
     else if (action === "connections") await connectionsDialog();
+    else if (action === "repository-settings") repositorySettingsDialog();
+    else if (action === "mcp-keys") await mcpKeysDialog();
+    else if (action === "copy-key") {
+      const field = document.querySelector("#created-mcp-key");
+      try {
+        await navigator.clipboard.writeText(field.value);
+        toast("Key 已复制，请保存在自己的客户端配置中");
+      } catch {
+        field.select();
+        toast("浏览器未允许复制，请手动复制已选中的 Key", true);
+      }
+    }
+    else if (action === "revoke-key") {
+      if (!window.confirm(`撤销“${button.dataset.name}”？使用此 Key 的客户端将无法继续查询。`)) return;
+      button.disabled = true;
+      await api(`/api/auth/keys/${encodeURIComponent(button.dataset.id)}`, undefined, "DELETE");
+      await mcpKeysDialog();
+      toast("Key 已撤销，使用其他 Key 的客户端不受影响");
+    }
     else if (action === "accounts") await accountsDialog();
     else if (action === "account-access") {
       button.disabled = true;
@@ -618,6 +659,8 @@ document.addEventListener("submit", async (event) => {
       "credential-form",
       "connection-form",
       "member-form",
+      "mcp-key-form",
+      "repository-settings-form",
       "knowledge-search",
       "symbol-search",
     ].includes(form.id)
@@ -651,6 +694,17 @@ document.addEventListener("submit", async (event) => {
       await api("/api/admin/users", fields);
       await accountsDialog();
       toast("成员账户已创建");
+    } else if (form.id === "mcp-key-form") {
+      const result = await api("/api/auth/keys", fields);
+      showCreatedKey(result);
+    } else if (form.id === "repository-settings-form") {
+      const repoId = fields.repository_id;
+      delete fields.repository_id;
+      await api(`/api/repositories/${encodeURIComponent(repoId)}`, fields, "PUT");
+      dialog.close();
+      await refreshRepos();
+      await route();
+      toast("知识库设置已保存");
     } else if (form.id === "connection-form") {
       const id = fields.id;
       delete fields.id;

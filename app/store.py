@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS sessions (
  hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  kind TEXT NOT NULL DEFAULT 'web', expires_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS api_keys (
+ id TEXT PRIMARY KEY,
+ session_hash TEXT NOT NULL UNIQUE REFERENCES sessions(hash) ON DELETE CASCADE,
+ name TEXT NOT NULL, created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS connections (
  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL,
  base_url TEXT NOT NULL, platform TEXT NOT NULL, credential BLOB, created_at REAL NOT NULL,
@@ -131,6 +136,11 @@ class Store:
                 con.execute('ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0')
             if 'connection_id' not in {row[1] for row in con.execute('PRAGMA table_info(repositories)')}:
                 con.execute('ALTER TABLE repositories ADD COLUMN connection_id TEXT REFERENCES connections(id)')
+            # Preserve existing Key hashes and clients; only add revocation metadata.
+            con.execute('''INSERT INTO api_keys(id,session_hash,name,created_at)
+                SELECT lower(hex(randomblob(16))),s.hash,'已有只读 Key',0
+                FROM sessions s WHERE s.kind='api' AND NOT EXISTS (
+                    SELECT 1 FROM api_keys k WHERE k.session_hash=s.hash)''')
             con.commit()
         os.chmod(self.path, 0o600)
         self.bootstrap()
@@ -170,23 +180,30 @@ class Store:
         with self.db(write=True) as con:
             if con.execute('SELECT 1 FROM users LIMIT 1').fetchone():
                 return
-            user_id, password, token = identifier(), secrets.token_urlsafe(20), secrets.token_urlsafe(32)
+            user_id, password = identifier(), secrets.token_urlsafe(20)
             con.execute('INSERT INTO users(id,username,password,created_at,is_admin) VALUES (?, ?, ?, ?, 1)',
                         (user_id, 'admin', password_hash(password), time.time()))
-            con.execute('INSERT INTO sessions VALUES (?, ?, ?, ?)',
-                        (hashlib.sha256(token.encode()).hexdigest(), user_id, 'api', 0))
+            key = self.create_api_key(con, user_id, '初始管理员 Key')
             target = self.root / 'admin.json'
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, 'w') as stream:
                 json.dump({'username': 'admin', 'password': password,
-                           'read_only_api_key': token}, stream, indent=2)
+                           'read_only_api_key': key['key']}, stream, indent=2)
+
+    def create_api_key(self, con, user_id, name):
+        token = secrets.token_urlsafe(32)
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        key_id, created_at = identifier(), time.time()
+        con.execute('INSERT INTO sessions VALUES (?,?,?,?)', (digest, user_id, 'api', 0))
+        con.execute('INSERT INTO api_keys VALUES (?,?,?,?)', (key_id, digest, name, created_at))
+        return {'id': key_id, 'name': name, 'created_at': created_at, 'key': token}
 
     def authenticate(self, token):
         if not token:
             return None
         digest = hashlib.sha256(token.encode()).hexdigest()
         with self.db() as con:
-            row = con.execute('''SELECT u.id, u.username, u.is_admin, s.kind FROM sessions s
+            row = con.execute('''SELECT u.id, u.username, u.is_admin, s.kind, s.hash AS session_hash FROM sessions s
                 JOIN users u ON u.id=s.user_id
                 WHERE s.hash=? AND u.disabled=0 AND (s.expires_at=0 OR s.expires_at>?)''',
                               (digest, time.time())).fetchone()

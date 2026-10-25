@@ -1,8 +1,18 @@
 # MCP clients
 
-Run RepoKnow before connecting a client. The endpoint is `http://127.0.0.1:8090/mcp`, using Streamable HTTP with JSON responses. Authentication is `Authorization: Bearer <read_only_api_key>`; the Key is generated in that instance's private `.data/admin.json`.
+Run RepoKnow before connecting a client. The endpoint is `http://127.0.0.1:8090/mcp`, using Streamable HTTP with JSON responses. Authentication is `Authorization: Bearer <read_only_api_key>`.
 
 The Key is separate from Git platform Tokens. Clients receive indexed evidence, not the Token used to fetch a private repository.
+
+## Personal Keys
+
+Sign in with your own member account and open **MCP 接入** in the sidebar. Create a named Key for each client and copy it immediately; the complete value is shown only once, and only its hash is stored in the database. The page also displays the endpoint for the current instance. The client must be able to reach that address; a loopback address refers to the client's own machine.
+
+Each account supports up to 20 Keys. They remain valid until revoked or the member is disabled. Revoke a specific Key in the same dialog to disconnect that client without affecting your login or other Keys. A Key cannot list, create or revoke Keys, import repositories, synchronize indexes or manage accounts. Lost Keys cannot be recovered; revoke them and create replacements.
+
+Existing Keys remain valid when upgrading, and gain list/revocation metadata without rotation. The initial administrator Key is also listed; its original value remains in private `.data/admin.json`, but revoking it makes that value invalid even after a restart. Do not distribute the administrator Key to team members.
+
+Keys use the account's current repository permissions on each request. A repository owner can change visibility in **知识库设置**: shared repositories are readable by all enabled members, and switching to private denies other members' subsequent queries through all five tools. Previously retrieved evidence cannot be recalled from clients.
 
 ## Codex
 

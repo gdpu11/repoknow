@@ -11,6 +11,8 @@ python3 scripts/prepare_release.py --check
 
 Automated coverage includes authentication, closed-by-default registration, administrator-only member management, disabled-account session/Key revocation, legacy administrator migration, user isolation, shared read-only repositories, CSRF checks, read-only API Keys, encrypted credentials, Token rotation, origin matching, GitLab pagination/subgroups, GitHub organization/Enterprise API discovery, owner/clone-path validation, pagination budgets, idempotent imports, failed discovery rollback, snapshot publication consistency, interrupted workers, schema upgrades, source provenance, malformed MCP arguments, and Markdown restrictions.
 
+Team access regressions also verify per-member named Key issuance, hash-only storage, individual revocation, the 20-Key limit, legacy Key migration without rotation, revoked-session races, and owner-only repository settings. Visibility changes are checked across Web search/source reads and all five MCP tools without reindexing or creating sync jobs.
+
 The private integration test creates a disposable Git HTTP server: group API calls require a fixture Token, Git fetch requires Basic authentication, and the final index is queried for known source evidence. It neither needs nor uses a real private repository. The fixture creates commit objects in a temporary bare repository; it does not commit the product checkout.
 
 Public demos are optional and require network access:
